@@ -3,6 +3,8 @@
 A small web app that removes image backgrounds and gives you a transparent PNG.
 Built with Flask, [rembg](https://github.com/danielgatis/rembg) and Pillow.
 
+![Flask Background Remover screenshot](docs/screen.png)
+
 ## Features
 
 - Drag and drop or click to upload
