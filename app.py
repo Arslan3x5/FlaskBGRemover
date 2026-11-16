@@ -1,37 +1,54 @@
-from flask import Flask, request, render_template, send_file, redirect, url_for
-from rembg import remove
-from PIL import Image
 import io
+import os
+
+from flask import Flask, jsonify, render_template, request, send_file
+from PIL import Image, ImageOps, UnidentifiedImageError
+from rembg import new_session, remove
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # reject uploads over 10 MB
 
-@app.route('/', methods=['GET', 'POST'])
+MAX_SIDE = 3000  # longest side in pixels; keeps memory use and time reasonable
+
+# Load the model once at startup instead of on every request (much faster).
+session = new_session("u2net")
+
+
+def remove_background(file_storage):
+    """Return PNG bytes of the uploaded image with its background removed."""
+    image = Image.open(file_storage.stream)
+    image = ImageOps.exif_transpose(image).convert("RGBA")
+    image.thumbnail((MAX_SIDE, MAX_SIDE))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return remove(buffer.getvalue(), session=session)
+
+
+@app.route("/")
 def index():
-    if request.method == 'POST':
-        file = request.files['image']
-        if file:
-            # Process the image in memory
-            input_img = Image.open(file.stream).convert('RGBA')
-            input_bytes = io.BytesIO()
-            input_img.save(input_bytes, format='PNG')
-            input_bytes.seek(0)
+    return render_template("index.html")
 
-            # Remove background
-            output_bytes = remove(input_bytes.read())
-            
-            # Create a downloadable file in memory
-            output_file = io.BytesIO(output_bytes)
-            output_file.seek(0)
 
-            # Serve the file as a download response
-            return send_file(
-                output_file,
-                mimetype='image/png',
-                as_attachment=True,
-                download_name='background_removed.png'
-            )
+@app.route("/api/remove", methods=["POST"])
+def api_remove():
+    file = request.files.get("image")
+    if not file or not file.filename:
+        return jsonify(error="Please choose an image."), 400
+    try:
+        result = remove_background(file)
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError):
+        return jsonify(error="That file is not a valid image."), 400
+    return send_file(
+        io.BytesIO(result),
+        mimetype="image/png",
+        download_name="background_removed.png",
+    )
 
-    return render_template('index.html')
 
-if __name__ == '__main__':
-    app.run(debug=True)
+@app.errorhandler(413)
+def too_large(_error):
+    return jsonify(error="Image is too large. Maximum size is 10 MB."), 413
+
+
+if __name__ == "__main__":
+    app.run(debug=os.environ.get("FLASK_DEBUG") == "1")

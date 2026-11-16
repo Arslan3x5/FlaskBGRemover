@@ -3,26 +3,129 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flask Background Remover</title>
+    <title>Background Remover</title>
+    <meta name="description" content="Remove image backgrounds in seconds. Free, private and runs on your own server.">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
 </head>
 <body>
-    <header>
-        <h1>Flask Background Remover</h1>
-        <p>Effortlessly remove image backgrounds with a single click!</p>
+    <header class="hero">
+        <h1>Remove image backgrounds <span>in seconds</span></h1>
+        <p>Upload a photo and get a transparent PNG. Images are processed in memory and never saved.</p>
     </header>
-    <main>
-        <div class="form-container">
-            <form method="POST" enctype="multipart/form-data">
-                <label for="image" class="file-label">Upload an Image:</label>
-                <input type="file" name="image" id="image" class="file-input" required>
-                <button type="submit" class="submit-btn">Remove Background</button>
-            </form>
-        </div>
+
+    <main class="card">
+        <form id="form" action="{{ url_for('api_remove') }}" method="POST" enctype="multipart/form-data">
+            <label id="drop" class="drop" for="image">
+                <input type="file" name="image" id="image" accept="image/*" required>
+                <strong>Drop an image here</strong>
+                <span>or click to choose a file &middot; PNG, JPG or WebP &middot; up to 10 MB</span>
+            </label>
+            <noscript><button type="submit" class="btn">Remove background</button></noscript>
+        </form>
+
+        <p id="status" class="status" role="status" aria-live="polite" hidden></p>
+
+        <section id="result" hidden>
+            <div class="compare" id="compare">
+                <img id="after" alt="Image with background removed">
+                <img id="before" alt="Original image">
+                <input type="range" id="slider" min="0" max="100" value="50" aria-label="Compare original and result">
+            </div>
+            <p class="hint">Drag the slider to compare the original and the result.</p>
+            <div class="actions">
+                <a id="download" class="btn" download="background_removed.png">Download PNG</a>
+                <button type="button" id="reset" class="btn ghost">Try another image</button>
+            </div>
+        </section>
     </main>
+
     <footer>
-        <p>© 2024 Flask BG Remover | Created by Arslanr369 with 💖</p>
+        <p>&copy; 2026 Flask BG Remover &middot; Made by Arslan Riaz &middot;
+        <a href="https://github.com/Arslan3x5/FlaskBGRemover">Source on GitHub</a></p>
     </footer>
+
+    <script>
+    (function () {
+        var MAX_BYTES = 10 * 1024 * 1024;
+        var input = document.getElementById('image');
+        var drop = document.getElementById('drop');
+        var form = document.getElementById('form');
+        var statusEl = document.getElementById('status');
+        var result = document.getElementById('result');
+        var before = document.getElementById('before');
+        var after = document.getElementById('after');
+        var slider = document.getElementById('slider');
+        var download = document.getElementById('download');
+        var urls = [];
+
+        function setStatus(text, isError) {
+            statusEl.hidden = !text;
+            statusEl.textContent = text || '';
+            statusEl.className = 'status' + (isError ? ' error' : '');
+        }
+
+        function clearUrls() {
+            urls.forEach(function (u) { URL.revokeObjectURL(u); });
+            urls = [];
+        }
+
+        function updateSlider() {
+            before.style.clipPath = 'inset(0 ' + (100 - slider.value) + '% 0 0)';
+        }
+
+        async function process(file) {
+            if (!file.type.startsWith('image/')) { setStatus('Please choose an image file.', true); return; }
+            if (file.size > MAX_BYTES) { setStatus('That image is larger than 10 MB.', true); return; }
+
+            clearUrls();
+            result.hidden = true;
+            setStatus('Removing background... the first image can take a little longer.');
+            var originalUrl = URL.createObjectURL(file);
+            urls.push(originalUrl);
+
+            var data = new FormData();
+            data.append('image', file);
+            try {
+                var response = await fetch(form.action, { method: 'POST', body: data });
+                if (!response.ok) {
+                    var message = 'Something went wrong. Please try another image.';
+                    try { message = (await response.json()).error || message; } catch (e) {}
+                    throw new Error(message);
+                }
+                var resultUrl = URL.createObjectURL(await response.blob());
+                urls.push(resultUrl);
+                before.src = originalUrl;
+                after.src = resultUrl;
+                download.href = resultUrl;
+                slider.value = 50;
+                updateSlider();
+                setStatus('');
+                result.hidden = false;
+                form.hidden = true;
+            } catch (err) {
+                setStatus(err.message, true);
+            }
+        }
+
+        input.addEventListener('change', function () { if (input.files[0]) process(input.files[0]); });
+        ['dragenter', 'dragover'].forEach(function (name) {
+            drop.addEventListener(name, function (e) { e.preventDefault(); drop.classList.add('over'); });
+        });
+        ['dragleave', 'drop'].forEach(function (name) {
+            drop.addEventListener(name, function (e) { e.preventDefault(); drop.classList.remove('over'); });
+        });
+        drop.addEventListener('drop', function (e) {
+            if (e.dataTransfer.files[0]) process(e.dataTransfer.files[0]);
+        });
+        slider.addEventListener('input', updateSlider);
+        document.getElementById('reset').addEventListener('click', function () {
+            clearUrls();
+            input.value = '';
+            result.hidden = true;
+            form.hidden = false;
+            setStatus('');
+        });
+    })();
+    </script>
 </body>
 </html>
